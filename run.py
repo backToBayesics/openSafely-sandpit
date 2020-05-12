@@ -29,6 +29,7 @@ from pandas.api.types import is_datetime64_dtype
 from pandas.api.types import is_numeric_dtype
 import yaml
 
+from shutil import copyfile
 from datetime import datetime
 import seaborn as sns
 
@@ -46,6 +47,8 @@ stata_image = "docker.pkg.github.com/ebmdatalab/stata-docker-runner/stata-mp:lat
 notebook_tag = "opencorona-research"
 target_dir = "/home/app/notebook"
 
+DUMMY_DATA_SOURCE = "tests/test_input.csv"
+MODEL_INPUT = "analysis/input.csv"
 
 def relative_dir():
     if sys.executable == "run.exe":
@@ -249,9 +252,10 @@ def make_chart(name, series, dtype):
     return base64.b64encode(img.read()).decode("UTF-8")
 
 
-def generate_cohort(expectations_population):
-    for study_name, suffix in list_study_definitions():
-        _generate_cohort(study_name, suffix, expectations_population)
+def generate_cohort(_):
+    print("Running. Please wait...")
+    copyfile(DUMMY_DATA_SOURCE, MODEL_INPUT)
+    print("Successfully created cohort and covariates at analysis/input.csv")
 
 
 def _generate_cohort(study_name, suffix, expectations_population):
@@ -333,16 +337,16 @@ def _make_cohort_report(study_name, suffix):
     print(f"Created cohort report at analysis/descriptives{suffix}.html")
 
 
+def load_model(name):
+    sys.path.extend([relative_dir(), os.path.join(relative_dir(), "analysis")])
+    # Avoid creating __pycache__ files in the analysis directory
+    sys.dont_write_bytecode = True
+    return importlib.import_module(name).train_model
+
+
 def run_model(folder, stata_path=None):
-    # XXX it's /e on windows
-    args = ["-b", "do", f"{folder}/model.do"]
-    if not stata_path:
-        # XXX they'll need to log in docker_login()? Ensure
-        # environment variables are set
-        docker_run(stata_image, *args)
-    else:
-        stream_subprocess_output([stata_path] + args)
-    return check_output()
+    train_model = load_model("model")
+    return train_model('analysis')
 
 
 def update_codelists():
@@ -391,7 +395,8 @@ def load_study_definition(name):
 def list_study_definitions():
     pattern = re.compile(r"^(study_definition(_\w+)?)\.py$")
     for name in sorted(os.listdir(os.path.join(relative_dir(), "analysis"))):
-        if match := pattern.match(name):
+        match = pattern.match(name)
+        if match:
             name = match.group(1)
             suffix = match.group(2) or ""
             yield name, suffix
